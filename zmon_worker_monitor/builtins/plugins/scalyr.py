@@ -38,6 +38,7 @@ class ScalyrWrapper(object):
         if scalyr_region == 'eu':
             scalyr_prefix = SCALYR_URL_PREFIX_EU
 
+        self.__query_url = '{}/query'.format(scalyr_prefix)
         self.__numeric_url = '{}/numericQuery'.format(scalyr_prefix)
         self.__timeseries_url = '{}/timeseriesQuery'.format(scalyr_prefix)
         self.__facet_url = '{}/facetQuery'.format(scalyr_prefix)
@@ -48,6 +49,33 @@ class ScalyrWrapper(object):
 
     def count(self, query, minutes=5):
         return self.timeseries(query, function='count', minutes=minutes, buckets=1, prio='low')
+
+    def messages(self, query, max_count=100, minutes=5, continuation_token=None):
+
+        val = {
+            'token': self.__read_key,
+            'queryType': 'log',
+            'maxCount': max_count,
+            'filter': query,
+            'startTime': str(minutes) + 'm',
+            'priority': 'low'
+        }
+
+        if continuation_token:
+            val['continuationToken'] = continuation_token
+
+        r = requests.post(self.__query_url, json=val, headers={'Content-Type': 'application/json'})
+
+        r.raise_for_status()
+
+        j = r.json()
+
+        if 'matches' in j:
+            new_continuation_token = j.get('continuationToken', None)
+            messages = [match['message'] for match in j['matches']]
+            return {'messages': messages, 'continuation_token': new_continuation_token}
+        else:
+            return j
 
     def function(self, function, query, minutes=5):
 
