@@ -50,7 +50,10 @@ class ScalyrWrapper(object):
     def count(self, query, minutes=5):
         return self.timeseries(query, function='count', minutes=minutes, buckets=1, prio='low')
 
-    def messages(self, query, max_count=100, minutes=5, continuation_token=None):
+    def logs(self, query, max_count=100, minutes=5, continuation_token=None):
+
+        if not query or not query.strip():
+            return {'messages': [], 'continuation_token': None}
 
         val = {
             'token': self.__read_key,

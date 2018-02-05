@@ -77,6 +77,16 @@ def fx_count(request):
         {'messages': ["test message 5", "test message 6"], 'continuation_token': None}
     ),
     (
+        {'query': '   '},
+        {},
+        {'messages': [], 'continuation_token': None}
+    ),
+    (
+        {'query': None},
+        {},
+        {'messages': [], 'continuation_token': None}
+    ),
+    (
         {'query': 'filter-query', 'continuation_token': 'some-other-token'},
         {
             'matches': [{
@@ -95,7 +105,7 @@ def fx_count(request):
         {'status': 'error/client', 'message': 'bad filter'},
     )
 ])
-def fx_messages(request):
+def fx_logs(request):
     return request.param
 
 
@@ -238,8 +248,8 @@ def test_scalyr_count(monkeypatch, fx_count):
         scalyr._ScalyrWrapper__timeseries_url, json=final_q, headers={'Content-Type': 'application/json'})
 
 
-def test_scalyr_messages(monkeypatch, fx_messages):
-    kwargs, res, exp = fx_messages
+def test_scalyr_logs(monkeypatch, fx_logs):
+    kwargs, res, exp = fx_logs
 
     read_key = '123'
 
@@ -249,7 +259,7 @@ def test_scalyr_messages(monkeypatch, fx_messages):
     monkeypatch.setattr('requests.post', post)
 
     scalyr = ScalyrWrapper(read_key)
-    result = scalyr.messages(**kwargs)
+    result = scalyr.logs(**kwargs)
 
     assert result == exp
 
@@ -262,8 +272,11 @@ def test_scalyr_messages(monkeypatch, fx_messages):
     if 'continuation_token' in kwargs:
         query['continuationToken'] = kwargs['continuation_token']
 
-    post.assert_called_with(
-        scalyr._ScalyrWrapper__query_url, json=query, headers={'Content-Type': 'application/json'})
+    if res:
+        post.assert_called_with(
+            scalyr._ScalyrWrapper__query_url, json=query, headers={'Content-Type': 'application/json'})
+    else:
+        post.assert_not_called
 
 
 def test_scalyr_function(monkeypatch, fx_function):
