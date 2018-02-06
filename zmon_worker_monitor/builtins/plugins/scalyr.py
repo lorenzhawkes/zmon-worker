@@ -5,6 +5,7 @@ import requests
 import logging
 
 from zmon_worker_monitor.zmon_worker.errors import ConfigurationError
+from zmon_worker_monitor.zmon_worker.errors import CheckError
 from zmon_worker_monitor.adapters.ifunctionfactory_plugin import IFunctionFactoryPlugin, propartial
 
 logger = logging.getLogger('zmon-worker.scalyr-function')
@@ -53,7 +54,7 @@ class ScalyrWrapper(object):
     def logs(self, query, max_count=100, minutes=5, continuation_token=None):
 
         if not query or not query.strip():
-            return {'messages': [], 'continuation_token': None}
+            raise CheckError('query "{}" is not allowed to be blank'.format(query))
 
         val = {
             'token': self.__read_key,
@@ -67,9 +68,9 @@ class ScalyrWrapper(object):
         if continuation_token:
             val['continuationToken'] = continuation_token
 
-        r = requests.post(self.__query_url, json=val, headers={'Content-Type': 'application/json'})
-
-        r.raise_for_status()
+        r = requests.post(self.__query_url,
+                          json=val,
+                          headers={'Content-Type': 'application/json', 'errorStatus': 'always200'})
 
         j = r.json()
 
@@ -77,8 +78,10 @@ class ScalyrWrapper(object):
             new_continuation_token = j.get('continuationToken', None)
             messages = [match['message'] for match in j['matches']]
             return {'messages': messages, 'continuation_token': new_continuation_token}
+        if j.get('status', '').startswith('error'):
+            raise CheckError(j['message'])
         else:
-            return j
+            raise CheckError('No logs or error message was returned from scalyr')
 
     def function(self, function, query, minutes=5):
 

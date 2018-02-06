@@ -4,6 +4,7 @@ import requests
 from mock import MagicMock
 
 from zmon_worker_monitor.builtins.plugins.scalyr import ScalyrWrapper, ConfigurationError
+from zmon_worker_monitor.zmon_worker.errors import CheckError
 
 
 @pytest.fixture(params=[
@@ -103,6 +104,11 @@ def fx_count(request):
         {'query': 'filter-query'},
         {'status': 'error/client', 'message': 'bad filter'},
         {'status': 'error/client', 'message': 'bad filter'},
+    ),
+    (
+        {'query': 'filter-query'},
+        {'unknown_reponse': 'unknown'},
+        {},
     )
 ])
 def fx_logs(request):
@@ -258,25 +264,50 @@ def test_scalyr_logs(monkeypatch, fx_logs):
 
     monkeypatch.setattr('requests.post', post)
 
+    def expected_query():
+        query = get_query('log', None, read_key, **kwargs)
+
+        query.pop('function', None)
+        query.pop('buckets', None)
+        query['maxCount'] = kwargs.get('max_count', 100)
+
+        if 'continuation_token' in kwargs:
+            query['continuationToken'] = kwargs['continuation_token']
+
+        return query
+
     scalyr = ScalyrWrapper(read_key)
-    result = scalyr.logs(**kwargs)
+    try:
+        result = scalyr.logs(**kwargs)
+        assert result == exp
 
-    assert result == exp
+        query = expected_query()
 
-    query = get_query('log', None, read_key, **kwargs)
-
-    query.pop('function', None)
-    query.pop('buckets', None)
-    query['maxCount'] = kwargs.get('max_count', 100)
-
-    if 'continuation_token' in kwargs:
-        query['continuationToken'] = kwargs['continuation_token']
-
-    if res:
         post.assert_called_with(
-            scalyr._ScalyrWrapper__query_url, json=query, headers={'Content-Type': 'application/json'})
-    else:
-        post.assert_not_called
+            scalyr._ScalyrWrapper__query_url,
+            json=query,
+            headers={'Content-Type': 'application/json', 'errorStatus': 'always200'})
+
+    except CheckError as e:
+        if not res:
+            assert '{}'.format(e) == 'query "{}" is not allowed to be blank'.format(kwargs['query'])
+            post.assert_not_called
+        elif 'message' in res:
+            assert '{}'.format(e) == res['message']
+            query = expected_query()
+            post.assert_called_with(
+                scalyr._ScalyrWrapper__query_url,
+                json=query,
+                headers={'Content-Type': 'application/json', 'errorStatus': 'always200'})
+        elif not exp:
+            assert '{}'.format(e) == 'No logs or error message was returned from scalyr'
+            query = expected_query()
+            post.assert_called_with(
+                scalyr._ScalyrWrapper__query_url,
+                json=query,
+                headers={'Content-Type': 'application/json', 'errorStatus': 'always200'})
+        else:
+            raise
 
 
 def test_scalyr_function(monkeypatch, fx_function):
